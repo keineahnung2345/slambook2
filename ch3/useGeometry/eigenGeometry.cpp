@@ -15,14 +15,14 @@ int main(int argc, char **argv) {
   // Eigen/Geometry 模块提供了各种旋转和平移的表示
   // 3D 旋转矩阵直接使用 Matrix3d 或 Matrix3f
   Matrix3d rotation_matrix = Matrix3d::Identity();
-  // 旋转向量使用 AngleAxis, 它底层不直接是Matrix，但运算可以当作矩阵（因为重载了运算符）
   AngleAxisd rotation_vector(M_PI / 4, Vector3d(0, 0, 1));     //沿 Z 轴旋转 45 度
   cout.precision(3);
+  cout << "angle axis = " << rotation_vector.angle() << ", " << rotation_vector.axis() << endl;
   cout << "rotation matrix =\n" << rotation_vector.matrix() << endl;   //用matrix()转换成矩阵
-  // 也可以直接赋值
   rotation_matrix = rotation_vector.toRotationMatrix();
-  // 用 AngleAxis 可以进行坐标变换
   Vector3d v(1, 0, 0);
+  // 旋转向量使用 AngleAxis, 它底层不直接是Matrix，但运算可以当作矩阵（因为重载了运算符）
+  // 用 AngleAxis 可以进行坐标变换
   Vector3d v_rotated = rotation_vector * v;
   cout << "(1,0,0) after rotation (by angle axis) = " << v_rotated.transpose() << endl;
   // 或者用旋转矩阵
@@ -31,11 +31,16 @@ int main(int argc, char **argv) {
 
   // 欧拉角: 可以将旋转矩阵直接转换成欧拉角
   Vector3d euler_angles = rotation_matrix.eulerAngles(2, 1, 0); // ZYX顺序，即yaw-pitch-roll顺序
+  // yaw pitch roll = 0.785    -0     0
+  // 0.785 = M_PI/4
   cout << "yaw pitch roll = " << euler_angles.transpose() << endl;
 
+  // http://zhaoxuhui.top/blog/2019/09/03/eigen-note-4.html
+  // 等距变换(Isometry Transform)可以看作是维持任意两点距离不变的仿射变换，也称做欧氏变换、刚体运动，在实际场景中使用比较多。
   // 欧氏变换矩阵使用 Eigen::Isometry
   Isometry3d T = Isometry3d::Identity();                // 虽然称为3d，实质上是4＊4的矩阵
   T.rotate(rotation_vector);                                     // 按照rotation_vector进行旋转
+  // 把平移的變換擺在左側,所以就是單純做平移的意思
   T.pretranslate(Vector3d(1, 3, 4));                     // 把平移向量设成(1,3,4)
   cout << "Transform matrix = \n" << T.matrix() << endl;
 

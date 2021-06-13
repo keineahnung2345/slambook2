@@ -10,6 +10,8 @@ using namespace std;
 string groundtruth_file = "./example/groundtruth.txt";
 string estimated_file = "./example/estimated.txt";
 
+//https://www.cnblogs.com/Glucklichste/p/10912257.html
+//因為Eigen管理內存的方式和C++11不同，所以需要特別聲明
 typedef vector<Sophus::SE3d, Eigen::aligned_allocator<Sophus::SE3d>> TrajectoryType;
 
 void DrawTrajectory(const TrajectoryType &gt, const TrajectoryType &esti);
@@ -26,6 +28,8 @@ int main(int argc, char **argv) {
   double rmse = 0;
   for (size_t i = 0; i < estimated.size(); i++) {
     Sophus::SE3d p1 = estimated[i], p2 = groundtruth[i];
+    // p1 * p2.inverse()：由p2到p1的轉換矩陣
+    // .log(): 對數映射，由4*4矩陣變為6*1向量
     double error = (p2.inverse() * p1).log().norm();
     rmse += error * error;
   }

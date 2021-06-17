@@ -31,6 +31,7 @@ int main(int argc, char **argv) {
 
   // 遍历图像, 请注意以下遍历方式亦可使用于随机像素访问
   // 使用 std::chrono 来给算法计时
+  // https://kheresy.wordpress.com/2013/12/27/c-stl-chrono/
   chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
   for (size_t y = 0; y < image.rows; y++) {
     // 用cv::Mat::ptr获得图像的行指针
@@ -57,6 +58,7 @@ int main(int argc, char **argv) {
   cv::waitKey(0);
 
   // 使用clone函数来拷贝数据
+  // 修改image_clone不會影響image
   cv::Mat image_clone = image.clone();
   image_clone(cv::Rect(0, 0, 100, 100)).setTo(255);
   cv::imshow("image", image);

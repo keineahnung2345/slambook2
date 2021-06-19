@@ -22,6 +22,7 @@ struct CURVE_FITTING_COST {
     return true;
   }
 
+  // 模型的輸入和輸出
   const double _x, _y;    // x,y数据
 };
 
@@ -37,9 +38,16 @@ int main(int argc, char **argv) {
   for (int i = 0; i < N; i++) {
     double x = i / 100.0;
     x_data.push_back(x);
+    /**
+     * https://docs.opencv.org/master/d1/dd6/classcv_1_1RNG.html#a8df8ce4dc7d15916cee743e5a884639d
+     * double cv::RNG::gaussian 	( 	double  	sigma	)
+     * Returns the next random number sampled from the Gaussian distribution.
+     **/
+    // w_sigma * w_sigma should be w_sigma?
     y_data.push_back(exp(ar * x * x + br * x + cr) + rng.gaussian(w_sigma * w_sigma));
   }
 
+  // 初始解？
   double abc[3] = {ae, be, ce};
 
   // 构建最小二乘问题
@@ -57,6 +65,7 @@ int main(int argc, char **argv) {
 
   // 配置求解器
   ceres::Solver::Options options;     // 这里有很多配置项可以填
+  // 增量方程？DENSE_NORMAL_CHOLESKY？
   options.linear_solver_type = ceres::DENSE_NORMAL_CHOLESKY;  // 增量方程如何求解
   options.minimizer_progress_to_stdout = true;   // 输出到cout
 

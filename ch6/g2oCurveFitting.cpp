@@ -46,6 +46,7 @@ public:
   virtual void computeError() override {
     const CurveFittingVertex *v = static_cast<const CurveFittingVertex *> (_vertices[0]);
     const Eigen::Vector3d abc = v->estimate();
+    // why abc(2, 0) not abc(2)?
     _error(0, 0) = _measurement - std::exp(abc(0, 0) * _x * _x + abc(1, 0) * _x + abc(2, 0));
   }
 
@@ -54,6 +55,9 @@ public:
     const CurveFittingVertex *v = static_cast<const CurveFittingVertex *> (_vertices[0]);
     const Eigen::Vector3d abc = v->estimate();
     double y = exp(abc[0] * _x * _x + abc[1] * _x + abc[2]);
+    /** http://docs.ros.org/en/fuerte/api/re_vision/html/classg2o_1_1BaseBinaryEdge.html#aa21b9d84924ec93192374761ee0adfa7
+     * 文檔一句文字描述都沒有？
+     **/
     _jacobianOplusXi[0] = -_x * _x * y;
     _jacobianOplusXi[1] = -_x * y;
     _jacobianOplusXi[2] = -y;
@@ -94,12 +98,14 @@ int main(int argc, char **argv) {
   optimizer.setVerbose(true);       // 打开调试输出
 
   // 往图中增加顶点
+  // 頂點:待優化變量
   CurveFittingVertex *v = new CurveFittingVertex();
   v->setEstimate(Eigen::Vector3d(ae, be, ce));
   v->setId(0);
   optimizer.addVertex(v);
 
   // 往图中增加边
+  // 邊：誤差項
   for (int i = 0; i < N; i++) {
     CurveFittingEdge *edge = new CurveFittingEdge(x_data[i]);
     edge->setId(i);
@@ -113,6 +119,7 @@ int main(int argc, char **argv) {
   cout << "start optimization" << endl;
   chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
   optimizer.initializeOptimization();
+  // 迭代次數
   optimizer.optimize(10);
   chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
   chrono::duration<double> time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);

@@ -36,17 +36,35 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < N; i++) {
       double xi = x_data[i], yi = y_data[i];  // 第i个数据点
+      // 注意是用估計出來的參數ae,be,ce去計算估計值
       double error = yi - exp(ae * xi * xi + be * xi + ce);
       Vector3d J; // 雅可比矩阵
-      // J是誤差項對參數a,b,c的微分？
+      /**
+       * J = run_f/run_{x^T}
+       * 在這裡f是誤差函數f = sum of error from i = 0 ~ N-1
+       * 所以J是f對參數a,b,c的微分
+       * J = [df/da df/db df/dc]
+       * In math, if f(x) in R^m, and x in R^n, then Jacobian is m*n matrix
+       * So Jacobian here should be a 1*n matrix, a.k.a row vector
+       * But in code, it's represented as a column vector
+       **/
       J[0] = -xi * xi * exp(ae * xi * xi + be * xi + ce);  // de/da
       J[1] = -xi * exp(ae * xi * xi + be * xi + ce);  // de/db
       J[2] = -exp(ae * xi * xi + be * xi + ce);  // de/dc
 
-      // H用增量計算？
+      /**
+       *     [df/dada df/dadb df/dadc]
+       * H = [df/dbda df/dbdb df/dbdc]
+       *     [df/dcda df/dcdb df/dcdc]
+       * In math of Gaussian-Newton, H should be J^T * J,
+       * But in code, J is a column vector, so using J * J^T
+       **/ 
       // inv_sigma在此何用？
       H += inv_sigma * inv_sigma * J * J.transpose();
-      // b: H*delta_x = g裡的g，用增量計算？
+      /**
+       * J^T * J * delta_x = -J^T * f
+       * b: H*delta_x = g裡的g
+       **/
       b += -inv_sigma * inv_sigma * error * J;
 
       cost += error * error;

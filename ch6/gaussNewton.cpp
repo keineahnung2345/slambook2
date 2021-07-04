@@ -37,6 +37,12 @@ int main(int argc, char **argv) {
     for (int i = 0; i < N; i++) {
       double xi = x_data[i], yi = y_data[i];  // 第i个数据点
       // 注意是用估計出來的參數ae,be,ce去計算估計值
+      /**
+       * error函數值為單筆數據的誤差,我們要求的是f函數,即所有N筆數據的誤差總和
+       * J對更新量的微分等於error對更新量微分的總和
+       * H*delta_x = g
+       * H與g的計算也是用累加的
+       **/
       double error = yi - exp(ae * xi * xi + be * xi + ce);
       Vector3d J; // 雅可比矩阵
       /**

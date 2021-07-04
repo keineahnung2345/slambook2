@@ -345,6 +345,7 @@ void ComputeORB(const cv::Mat &img, vector<cv::KeyPoint> &keypoints, vector<Desc
   const int half_boundary = 16;
   int bad_points = 0;
   for (auto &kp: keypoints) {
+    // kp.pt.x - half_boundary < 0 or kp.pt.x + half_boundary >= img.cols
     if (kp.pt.x < half_boundary || kp.pt.y < half_boundary ||
         kp.pt.x >= img.cols - half_boundary || kp.pt.y >= img.rows - half_boundary) {
       // outside
@@ -354,8 +355,10 @@ void ComputeORB(const cv::Mat &img, vector<cv::KeyPoint> &keypoints, vector<Desc
     }
 
     float m01 = 0, m10 = 0;
+    // patch: [-half_patch_size, half_patch_size-1]
     for (int dx = -half_patch_size; dx < half_patch_size; ++dx) {
       for (int dy = -half_patch_size; dy < half_patch_size; ++dy) {
+        // 注意是先y(y沿上下方向移動,y的等高線為橫向)後x(x沿左右方向移動,x的等高線為縱向)
         uchar pixel = img.at<uchar>(kp.pt.y + dy, kp.pt.x + dx);
         m10 += dx * pixel;
         m01 += dy * pixel;
@@ -363,25 +366,35 @@ void ComputeORB(const cv::Mat &img, vector<cv::KeyPoint> &keypoints, vector<Desc
     }
 
     // angle should be arc tan(m01/m10);
+    // m10與m01分別為三角形的底跟高,m_sqrt為直角三角形的斜邊長
     float m_sqrt = sqrt(m01 * m01 + m10 * m10) + 1e-18; // avoid divide by zero
     float sin_theta = m01 / m_sqrt;
     float cos_theta = m10 / m_sqrt;
 
     // compute the angle of this point
+    // uint32_t * 8 = 256 bits
     DescType desc(8, 0);
     for (int i = 0; i < 8; i++) {
       uint32_t d = 0;
       for (int k = 0; k < 32; k++) {
         int idx_pq = i * 32 + k;
+        // 固定p,q的取法
         cv::Point2f p(ORB_pattern[idx_pq * 4], ORB_pattern[idx_pq * 4 + 1]);
         cv::Point2f q(ORB_pattern[idx_pq * 4 + 2], ORB_pattern[idx_pq * 4 + 3]);
 
         // rotate with theta
+        /**
+         * 旋轉矩陣:[cos  -sin]
+         *         [sin   cos]
+         * 對點p,q旋轉theta
+         **/
         cv::Point2f pp = cv::Point2f(cos_theta * p.x - sin_theta * p.y, sin_theta * p.x + cos_theta * p.y)
                          + kp.pt;
         cv::Point2f qq = cv::Point2f(cos_theta * q.x - sin_theta * q.y, sin_theta * q.x + cos_theta * q.y)
                          + kp.pt;
+        //p點intensity大則該bit為0,q點intensity大則該bit為1
         if (img.at<uchar>(pp.y, pp.x) < img.at<uchar>(qq.y, qq.x)) {
+          //第k個bit
           d |= 1 << k;
         }
       }
@@ -403,9 +416,11 @@ void BfMatch(const vector<DescType> &desc1, const vector<DescType> &desc2, vecto
     for (size_t i2 = 0; i2 < desc2.size(); ++i2) {
       if (desc2[i2].empty()) continue;
       int distance = 0;
+      //計算8個uint32_t中有幾個bit不同
       for (int k = 0; k < 8; k++) {
         distance += _mm_popcnt_u32(desc1[i1][k] ^ desc2[i2][k]);
       }
+      //distance < d_max:排除距離過大的match
       if (distance < d_max && distance < m.distance) {
         m.distance = distance;
         m.trainIdx = i2;

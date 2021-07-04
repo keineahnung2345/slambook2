@@ -47,6 +47,12 @@ int main(int argc, char **argv) {
   pose_estimation_2d2d(keypoints_1, keypoints_2, matches, R, t);
 
   //-- 验证E=t^R*scale
+  /**
+   * 構造t的反對稱矩陣:
+   * [ 0 -c  b]
+   * [ c  0 -a]
+   * [-b  a  0]
+   **/ 
   Mat t_x =
     (Mat_<double>(3, 3) << 0, -t.at<double>(2, 0), t.at<double>(1, 0),
       t.at<double>(2, 0), 0, -t.at<double>(0, 0),
@@ -57,11 +63,17 @@ int main(int argc, char **argv) {
   //-- 验证对极约束
   Mat K = (Mat_<double>(3, 3) << 520.9, 0, 325.1, 0, 521.0, 249.7, 0, 0, 1);
   for (DMatch m: matches) {
+    //相機坐標系
+    //恢復出來的是歸一化像平面上的三維點坐標
     Point2d pt1 = pixel2cam(keypoints_1[m.queryIdx].pt, K);
+    //齊次表示法
     Mat y1 = (Mat_<double>(3, 1) << pt1.x, pt1.y, 1);
     Point2d pt2 = pixel2cam(keypoints_2[m.trainIdx].pt, K);
     Mat y2 = (Mat_<double>(3, 1) << pt2.x, pt2.y, 1);
+    // 對極約束:x2^T * t^ * R * x1 = 0
+    // 本例中本質矩陣* -1.414 = t^ * R
     Mat d = y2.t() * t_x * R * y1;
+    //這個值應該越接近0越好
     cout << "epipolar constraint = " << d << endl;
   }
   return 0;
@@ -115,6 +127,19 @@ void find_feature_matches(const Mat &img_1, const Mat &img_2,
 }
 
 Point2d pixel2cam(const Point2d &p, const Mat &K) {
+  /**內參
+   *     [fx  0 cx]
+   * K = [ 0 fy cy]
+   *     [ 0  0  1]
+   * X: 3d point, in camera coordinate
+   * x: 2d point, in pixel space
+   * [x]   1   [fx 0 cx][X]
+   * [y] = - * [0 fy cy][Y]
+   * [1]   Z   [0  0  1][Z]
+   * x = (1/Z) * (fx * X + cx) -> X = (Z * x-cx)/fx
+   * 這裡恢復出來的深度值永遠是1(在歸一化像平面上)
+   * 要這麼將歸一化像平面上的坐標轉換為真實的三維點坐標?
+   **/ 
   return Point2d
     (
       (p.x - K.at<double>(0, 2)) / K.at<double>(0, 0),
@@ -141,6 +166,18 @@ void pose_estimation_2d2d(std::vector<KeyPoint> keypoints_1,
   //-- 计算基础矩阵
   Mat fundamental_matrix;
   //https://docs.opencv.org/4.2.0/d9/d0c/group__calib3d.html
+  //八點法計算基礎矩陣
+  /**
+   * p1: image1上的像素點
+   * p2: image2上的像素點
+   * x1: 由image1上的像素點逆投影得到的三維點
+   * x2: 由image2上的像素點逆投影得到的三維點
+   * 對極約束:
+   * x2^T * E * x1 = p2^T * F * p1 = 0
+   * 基礎矩陣作用於像素點上,在不知道內參K時也可以使用
+   * 本質矩陣作用於三維點上,必須知道內參K才能用
+   **/
+  //F = K^(-T) * E * K ^(-1)
   fundamental_matrix = findFundamentalMat(points1, points2, cv::FM_8POINT);
   cout << "fundamental_matrix is " << endl << fundamental_matrix << endl;
 
@@ -148,6 +185,7 @@ void pose_estimation_2d2d(std::vector<KeyPoint> keypoints_1,
   Point2d principal_point(325.1, 249.7);  //相机光心, TUM dataset标定值
   double focal_length = 521;      //相机焦距, TUM dataset标定值
   Mat essential_matrix;
+  //需要給定:focal_length, principal_point,也就是相機內參才能使用本質矩陣
   essential_matrix = findEssentialMat(points1, points2, focal_length, principal_point);
   cout << "essential_matrix is " << endl << essential_matrix << endl;
 

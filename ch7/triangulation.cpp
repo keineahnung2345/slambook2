@@ -178,7 +178,7 @@ void triangulation(
     pts_2.push_back(pixel2cam(keypoint_2[m.trainIdx].pt, K));
   }
 
-  Mat pts_4d;
+  Mat pts_4d; //4*N, 三維點坐標的齊次表示
   cv::triangulatePoints(T1, T2, pts_1, pts_2, pts_4d);
 
   // 转换成非齐次坐标

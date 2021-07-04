@@ -66,12 +66,18 @@ int main(int argc, char **argv) {
   vector<Point3f> pts_3d;
   vector<Point2f> pts_2d;
   for (DMatch m:matches) {
+    //keypoints_1[m.queryIdx].pt:關鍵點的坐標
+    //unsigned short: 16 bit
     ushort d = d1.ptr<unsigned short>(int(keypoints_1[m.queryIdx].pt.y))[int(keypoints_1[m.queryIdx].pt.x)];
     if (d == 0)   // bad depth
       continue;
     float dd = d / 5000.0;
+    //關鍵點的像素坐標->三維點坐標
+    //恢復出來的是歸一化像平面上的三維點坐標
     Point2d p1 = pixel2cam(keypoints_1[m.queryIdx].pt, K);
+    //齊次表示,同乘深度值,得到真正的三維點坐標
     pts_3d.push_back(Point3f(p1.x * dd, p1.y * dd, dd));
+    //另外一張圖上的像素坐標
     pts_2d.push_back(keypoints_2[m.trainIdx].pt);
   }
 
@@ -81,6 +87,7 @@ int main(int argc, char **argv) {
   Mat r, t;
   solvePnP(pts_3d, pts_2d, K, Mat(), r, t, false); // 调用OpenCV 的 PnP 求解，可选择EPNP，DLS等方法
   Mat R;
+  //R = cos(theta) * I + (1-cos(theta))*n*n^T + sin(theta)*n^
   cv::Rodrigues(r, R); // r为旋转向量形式，用Rodrigues公式转换为矩阵
   chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
   chrono::duration<double> time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
@@ -189,14 +196,29 @@ void bundleAdjustmentGaussNewton(
     cost = 0;
     // compute cost
     for (int i = 0; i < points_3d.size(); i++) {
+      //pose:當前估計的相機姿態
       Eigen::Vector3d pc = pose * points_3d[i];
       double inv_z = 1.0 / pc[2];
       double inv_z2 = inv_z * inv_z;
+      /**
+       * pc:三維點坐標
+       * (pc[0]/pc[2], pc[1]/pc[2]):歸一化像平面上的坐標
+       * 內參K作用於歸一化像平面上的坐標
+       * 得到proj,即像素點坐標
+       **/
       Eigen::Vector2d proj(fx * pc[0] / pc[2] + cx, fy * pc[1] / pc[2] + cy);
 
+      //真實像素點坐標與估計像素點坐標間的誤差
       Eigen::Vector2d e = points_2d[i] - proj;
 
       cost += e.squaredNorm();
+      /**
+       * 2*6的Jacobian矩陣:
+       * fx,fy:相機焦距
+       * P'=[X' Y' Z']為相機坐標系下的三維點坐標
+       *   [fx/Z'     0 -fx*X'/(Z'Z')    -fxX'Y'/(Z'Z') fx+(fxX'X')/(Z'Z') -fxY'/(Z'Z')]
+       * - [0     fy/Z'  -fyY'/(Z'Z') -fy-fyY'Y'/(Z'Z')       fyX'Y'/(Z'Z')     fyX'/Z']
+       **/
       Eigen::Matrix<double, 2, 6> J;
       J << -fx * inv_z,
         0,
@@ -211,10 +233,17 @@ void bundleAdjustmentGaussNewton(
         -fy * pc[0] * pc[1] * inv_z2,
         -fy * pc[0] * inv_z;
 
+      /**
+       * J^T * J & delta_x = - J^T * f(x)
+       * H * delta_x = g
+       **/ 
       H += J.transpose() * J;
       b += -J.transpose() * e;
     }
 
+    /**
+     * 求解H * delta_x = g
+     **/
     Vector6d dx;
     dx = H.ldlt().solve(b);
 
@@ -230,6 +259,14 @@ void bundleAdjustmentGaussNewton(
     }
 
     // update your estimation
+    // 這裡的更新量dx的物理意義是delta_xi,即se(3)李代數
+    /**
+     * 導數模型:對R對應的李代數加小量,求相對於小量的變化率
+     * 擾動模型:對R左乘小量,求相對於小量的李代數的變化率
+     * ei = ui - (1/si) * K * exp(xi^) * P_i
+     * 從上式可以看出是左乘小量,代表用的是擾動模型
+     * 所以更新方式為對李群SE(3)左乘小量
+     **/
     pose = Sophus::SE3d::exp(dx) * pose;
     lastCost = cost;
 
@@ -254,6 +291,7 @@ public:
 
   /// left multiplication on SE3
   virtual void oplusImpl(const double *update) override {
+    // 擾動模型:求解李代數小量se(3),然後將它轉成李群表示,之後左乘到估計的pose上
     Eigen::Matrix<double, 6, 1> update_eigen;
     update_eigen << update[0], update[1], update[2], update[3], update[4], update[5];
     _estimate = Sophus::SE3d::exp(update_eigen) * _estimate;
@@ -273,13 +311,16 @@ public:
   virtual void computeError() override {
     const VertexPose *v = static_cast<VertexPose *> (_vertices[0]);
     Sophus::SE3d T = v->estimate();
+    // 將世界坐標系的三維點_pos3d用T轉換到相機坐標系後,乘上內參_K,再除以深度值後得到像素點坐標
     Eigen::Vector3d pos_pixel = _K * (T * _pos3d);
     pos_pixel /= pos_pixel[2];
+    // measurement:真實的像素坐標
     _error = _measurement - pos_pixel.head<2>();
   }
 
   virtual void linearizeOplus() override {
     const VertexPose *v = static_cast<VertexPose *> (_vertices[0]);
+    // 估計出來的旋轉矩陣,即李群SE(3)
     Sophus::SE3d T = v->estimate();
     Eigen::Vector3d pos_cam = T * _pos3d;
     double fx = _K(0, 0);

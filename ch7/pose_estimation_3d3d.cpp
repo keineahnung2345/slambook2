@@ -46,6 +46,7 @@ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
   virtual void setToOriginImpl() override {
+    //估計變換矩陣
     _estimate = Sophus::SE3d();
   }
 
@@ -53,6 +54,7 @@ public:
   virtual void oplusImpl(const double *update) override {
     Eigen::Matrix<double, 6, 1> update_eigen;
     update_eigen << update[0], update[1], update[2], update[3], update[4], update[5];
+    //se(3) -> SE(3)
     _estimate = Sophus::SE3d::exp(update_eigen) * _estimate;
   }
 
@@ -70,6 +72,7 @@ public:
 
   virtual void computeError() override {
     const VertexPose *pose = static_cast<const VertexPose *> ( _vertices[0] );
+    // 兩個三維點的誤差
     _error = _measurement - pose->estimate() * _point;
   }
 
@@ -77,6 +80,12 @@ public:
     VertexPose *pose = static_cast<VertexPose *>(_vertices[0]);
     Sophus::SE3d T = pose->estimate();
     Eigen::Vector3d xyz_trans = T * _point;
+    /**
+     * SE(3)上的擾動模型
+     * run(TP)/run(delta_xi) = 
+     * [I   -(Rp+t)^]
+     * [0^T      0^T]
+     **/
     _jacobianOplusXi.block<3, 3>(0, 0) = -Eigen::Matrix3d::Identity();
     _jacobianOplusXi.block<3, 3>(0, 3) = Sophus::SO3d::hat(xyz_trans);
   }
@@ -110,24 +119,31 @@ int main(int argc, char **argv) {
   vector<Point3f> pts1, pts2;
 
   for (DMatch m:matches) {
+    // keypoints_1[m.queryIdx].pt: 第一張圖上的特徵點
+    // keypoints_2[m.trainIdx].pt: 第二張圖上的特徵點
     ushort d1 = depth1.ptr<unsigned short>(int(keypoints_1[m.queryIdx].pt.y))[int(keypoints_1[m.queryIdx].pt.x)];
     ushort d2 = depth2.ptr<unsigned short>(int(keypoints_2[m.trainIdx].pt.y))[int(keypoints_2[m.trainIdx].pt.x)];
     if (d1 == 0 || d2 == 0)   // bad depth
       continue;
+    //恢復出來的是歸一化像平面上的三維點坐標
     Point2d p1 = pixel2cam(keypoints_1[m.queryIdx].pt, K);
     Point2d p2 = pixel2cam(keypoints_2[m.trainIdx].pt, K);
     float dd1 = float(d1) / 5000.0;
     float dd2 = float(d2) / 5000.0;
+    //齊次表示,同乘深度值,得到真正的三維點坐標
     pts1.push_back(Point3f(p1.x * dd1, p1.y * dd1, dd1));
     pts2.push_back(Point3f(p2.x * dd2, p2.y * dd2, dd2));
   }
 
   cout << "3d-3d pairs: " << pts1.size() << endl;
   Mat R, t;
+  // 如果知道兩點雲間的匹配,可以用SVD一次就求出解,不需迭代(ICP)
   pose_estimation_3d3d(pts1, pts2, R, t);
   cout << "ICP via SVD results: " << endl;
+  // p1 = R*p2+t
   cout << "R = " << R << endl;
   cout << "t = " << t << endl;
+  // p2 = R^(-1) * (p1-t) = R^(-1) * p1 - R^(-1) * t
   cout << "R_inv = " << R.t() << endl;
   cout << "t_inv = " << -R.t() * t << endl;
 
@@ -218,6 +234,7 @@ void pose_estimation_3d3d(const vector<Point3f> &pts1,
   }
 
   // compute q1*q2^T
+  // W = sigma (q1i * q2i^T)
   Eigen::Matrix3d W = Eigen::Matrix3d::Zero();
   for (int i = 0; i < N; i++) {
     W += Eigen::Vector3d(q1[i].x, q1[i].y, q1[i].z) * Eigen::Vector3d(q2[i].x, q2[i].y, q2[i].z).transpose();
@@ -232,10 +249,18 @@ void pose_estimation_3d3d(const vector<Point3f> &pts1,
   cout << "U=" << U << endl;
   cout << "V=" << V << endl;
 
+  // 用SVD求解R = U * V^T
   Eigen::Matrix3d R_ = U * (V.transpose());
+  // 如果R_的判別式小於0,則把它乘上-1,使它變為一個旋轉矩陣.
+  // 還可以這樣?
   if (R_.determinant() < 0) {
     R_ = -R_;
   }
+  /**
+   * p1: target
+   * p2: source
+   * 取t = p1 - Rp2
+   **/
   Eigen::Vector3d t_ = Eigen::Vector3d(p1.x, p1.y, p1.z) - R_ * Eigen::Vector3d(p2.x, p2.y, p2.z);
 
   // convert to cv::Mat
@@ -264,6 +289,7 @@ void bundleAdjustment(
   // vertex
   VertexPose *pose = new VertexPose(); // camera pose
   pose->setId(0);
+  //估計變換矩陣
   pose->setEstimate(Sophus::SE3d());
   optimizer.addVertex(pose);
 
@@ -272,6 +298,7 @@ void bundleAdjustment(
     EdgeProjectXYZRGBDPoseOnly *edge = new EdgeProjectXYZRGBDPoseOnly(
       Eigen::Vector3d(pts2[i].x, pts2[i].y, pts2[i].z));
     edge->setVertex(0, pose);
+    //pts1[i]為target,為groundtruth
     edge->setMeasurement(Eigen::Vector3d(
       pts1[i].x, pts1[i].y, pts1[i].z));
     edge->setInformation(Eigen::Matrix3d::Identity());

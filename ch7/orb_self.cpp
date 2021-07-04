@@ -346,6 +346,7 @@ void ComputeORB(const cv::Mat &img, vector<cv::KeyPoint> &keypoints, vector<Desc
   int bad_points = 0;
   for (auto &kp: keypoints) {
     // kp.pt.x - half_boundary < 0 or kp.pt.x + half_boundary >= img.cols
+    // 取16*16的圖像塊,觀察p,q的offset,在-13到13之間,所以這裡排除邊界16像素以內的點
     if (kp.pt.x < half_boundary || kp.pt.y < half_boundary ||
         kp.pt.x >= img.cols - half_boundary || kp.pt.y >= img.rows - half_boundary) {
       // outside

@@ -93,6 +93,13 @@ inline float GetPixelValue(const cv::Mat &img, float x, float y) {
     uchar *data = &img.data[int(y) * img.step + int(x)];
     float xx = x - floor(x);
     float yy = y - floor(y);
+    /**
+     * 雙線性內插
+     * 左上:data[0]
+     * 右上:data[1]
+     * 左下:data[img.step]
+     * 右下:data[img.step+1]
+     **/
     return float(
         (1 - xx) * (1 - yy) * data[0] +
         xx * (1 - yy) * data[1] +
@@ -184,6 +191,10 @@ void OpticalFlowSingleLevel(
     kp2.resize(kp1.size());
     success.resize(kp1.size());
     OpticalFlowTracker tracker(img1, img2, kp1, kp2, success, inverse, has_initial);
+    /**
+     * cv::parallel_for_
+     * https://blog.csdn.net/qq_27825451/article/details/103878676
+     **/
     parallel_for_(Range(0, kp1.size()),
                   std::bind(&OpticalFlowTracker::calculateOpticalFlow, &tracker, placeholders::_1));
 }
@@ -192,6 +203,11 @@ void OpticalFlowTracker::calculateOpticalFlow(const Range &range) {
     // parameters
     int half_patch_size = 4;
     int iterations = 10;
+    /**
+     * 第一個循環是遍歷keypoint,第二個循環是遍歷iterations次,
+     * 兩個順序倒過來了?
+     * 不同keypoint對dx,dy所做的更新有在每個iteration一開始時做同步?
+     **/
     for (size_t i = range.start; i < range.end; i++) {
         auto kp = kp1[i];
         double dx = 0, dy = 0; // dx,dy need to be estimated
@@ -212,6 +228,10 @@ void OpticalFlowTracker::calculateOpticalFlow(const Range &range) {
                 H = Eigen::Matrix2d::Zero();
                 b = Eigen::Vector2d::Zero();
             } else {
+                /**
+                 * 在inverse mode中,J在不同iterations中不會改變,
+                 * 所以H = J^T*J也不會改變,只要算一次就好
+                 **/
                 // only reset b
                 b = Eigen::Vector2d::Zero();
             }
@@ -221,9 +241,19 @@ void OpticalFlowTracker::calculateOpticalFlow(const Range &range) {
             // compute cost and jacobian
             for (int x = -half_patch_size; x < half_patch_size; x++)
                 for (int y = -half_patch_size; y < half_patch_size; y++) {
+                    /**
+                     * T - I
+                     * 光度不變假設:T裡的一小塊patch與I裡的一小塊patch光度一致,
+                     * 所以error的第一項中,img1的坐標也要加(x,y)
+                     **/
                     double error = GetPixelValue(img1, kp.pt.x + x, kp.pt.y + y) -
                                    GetPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy);;  // Jacobian
                     if (inverse == false) {
+                        /**
+                         * J: I(x+p)對(x,y)的gradient
+                         * 跨兩個像素,然後除以2?
+                         * -1是哪裡來的?
+                         **/
                         J = -1.0 * Eigen::Vector2d(
                             0.5 * (GetPixelValue(img2, kp.pt.x + dx + x + 1, kp.pt.y + dy + y) -
                                    GetPixelValue(img2, kp.pt.x + dx + x - 1, kp.pt.y + dy + y)),
@@ -233,6 +263,8 @@ void OpticalFlowTracker::calculateOpticalFlow(const Range &range) {
                     } else if (iter == 0) {
                         // in inverse mode, J keeps same for all iterations
                         // NOTE this J does not change when dx, dy is updated, so we can store it and only compute error
+                        // 對每個keypoint,只有在第0次迭代時要計算J
+                        // inverse mode中的J是T對(x, y)的gradient
                         J = -1.0 * Eigen::Vector2d(
                             0.5 * (GetPixelValue(img1, kp.pt.x + x + 1, kp.pt.y + y) -
                                    GetPixelValue(img1, kp.pt.x + x - 1, kp.pt.y + y)),
@@ -241,10 +273,14 @@ void OpticalFlowTracker::calculateOpticalFlow(const Range &range) {
                         );
                     }
                     // compute H, b and set cost;
+                    /**
+                     * J跟b都多了一個負號,相抵消
+                     **/
                     b += -error * J;
                     cost += error * error;
                     if (inverse == false || iter == 0) {
                         // also update H
+                        // inverse mode中只有第0次迭代需要計算J及H
                         H += J * J.transpose();
                     }
                 }
@@ -303,6 +339,7 @@ void OpticalFlowMultiLevel(
             pyr1.push_back(img1);
             pyr2.push_back(img2);
         } else {
+            // 金字塔前一層圖片按pyramid_scale的比例縮小
             Mat img1_pyr, img2_pyr;
             cv::resize(pyr1[i - 1], img1_pyr,
                        cv::Size(pyr1[i - 1].cols * pyramid_scale, pyr1[i - 1].rows * pyramid_scale));
@@ -317,11 +354,19 @@ void OpticalFlowMultiLevel(
     cout << "build pyramid time: " << time_used.count() << endl;
 
     // coarse-to-fine LK tracking in pyramids
+    // 變數命名誤導:這兩個只是KeyPoint的向量而已,根本不是pyramid
     vector<KeyPoint> kp1_pyr, kp2_pyr;
     for (auto &kp:kp1) {
         auto kp_top = kp;
         kp_top.pt *= scales[pyramids - 1];
         kp1_pyr.push_back(kp_top);
+        /**
+         * kp2_pyr跟kp1_pyr一樣,
+         * 表示拿圖T中的關鍵點位置當作圖I中關鍵點位置的初始解,
+         * 這個初始解有跟沒有一樣,
+         * 因為dx = kp2[i].pt.x - kp.pt.x, dy = kp2[i].pt.y - kp.pt.y
+         * 都會等於0
+         **/
         kp2_pyr.push_back(kp_top);
     }
 
@@ -335,6 +380,7 @@ void OpticalFlowMultiLevel(
         cout << "track pyr " << level << " cost time: " << time_used.count() << endl;
 
         if (level > 0) {
+            // 為下一層做準備:放大關鍵點的尺度
             for (auto &kp: kp1_pyr)
                 kp.pt /= pyramid_scale;
             for (auto &kp: kp2_pyr)
@@ -342,6 +388,7 @@ void OpticalFlowMultiLevel(
         }
     }
 
+    // 最後一層算出來的kp2_pyr就是多層光流法最終的答案
     for (auto &kp: kp2_pyr)
         kp2.push_back(kp);
 }

@@ -168,6 +168,7 @@ void DirectPoseEstimationSingleLayer(
 
     for (int iter = 0; iter < iterations; iter++) {
         jaco_accu.reset();
+        // 考慮所有關鍵點附近的patch,利用他們計算hessian跟bias
         cv::parallel_for_(cv::Range(0, px_ref.size()),
                           std::bind(&JacobianAccumulator::accumulate_jacobian, &jaco_accu, std::placeholders::_1));
         Matrix6d H = jaco_accu.hessian();
@@ -230,13 +231,21 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
     for (size_t i = range.start; i < range.end; i++) {
 
         // compute the projection in the second image
+        /**
+         * u = (fx * X)/Z + cx
+         * v = (fy * Y)/Z + cy
+         * camera 1坐標系裡的三維點:Z * [(u-cx)/fx (v-cy)/fy 1]
+         **/
         Eigen::Vector3d point_ref =
             depth_ref[i] * Eigen::Vector3d((px_ref[i][0] - cx) / fx, (px_ref[i][1] - cy) / fy, 1);
+        // camera 2坐標系裡的三維點
         Eigen::Vector3d point_cur = T21 * point_ref;
         if (point_cur[2] < 0)   // depth invalid
             continue;
 
+        // camera 2裡的像素坐標
         float u = fx * point_cur[0] / point_cur[2] + cx, v = fy * point_cur[1] / point_cur[2] + cy;
+        // u - half_patch_size < 0 or u + (half_patch_size-1) >= img.cols
         if (u < half_patch_size || u > img2.cols - half_patch_size || v < half_patch_size ||
             v > img2.rows - half_patch_size)
             continue;
@@ -275,6 +284,13 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
                 );
 
                 // total jacobian
+                /**
+                 * J_img_pixel.transpose(): 1*2
+                 * J_pixel_xi: 2*6
+                 * J: 數學上應該是1*6
+                 * hessian:數學上應該是J^T * J
+                 * b: 數學上應該是-J^T * error
+                 **/
                 Vector6d J = -1.0 * (J_img_pixel.transpose() * J_pixel_xi).transpose();
 
                 hessian += J * J.transpose();
@@ -285,6 +301,7 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
 
     if (cnt_good) {
         // set hessian, bias and cost
+        // lck有用到?
         unique_lock<mutex> lck(hessian_mutex);
         H += hessian;
         b += bias;
@@ -333,7 +350,9 @@ void DirectPoseEstimationMultiLayer(
         fy = fyG * scales[level];
         cx = cxG * scales[level];
         cy = cyG * scales[level];
+        // 不需要對depth_ref做縮放
         DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21);
+        // 不需要對T21特別做什麼
     }
 
 }

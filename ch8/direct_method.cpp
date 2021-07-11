@@ -83,7 +83,8 @@ void DirectPoseEstimationMultiLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21
+    Sophus::SE3d &T21,
+    int img_idx = 0
 );
 
 /**
@@ -99,7 +100,8 @@ void DirectPoseEstimationSingleLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21
+    Sophus::SE3d &T21,
+    int img_idx = 0
 );
 
 // bilinear interpolation
@@ -148,8 +150,8 @@ int main(int argc, char **argv) {
     for (int i = 1; i < 6; i++) {  // 1~10
         cv::Mat img = cv::imread((fmt_others % i).str(), 0);
         // try single layer by uncomment this line
-        // DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
-        DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
+        // DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref, i);
+        DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref, i);
     }
     return 0;
 }
@@ -159,7 +161,8 @@ void DirectPoseEstimationSingleLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21) {
+    Sophus::SE3d &T21,
+    int img_idx) {
 
     const int iterations = 10;
     double cost = 0, lastCost = 0;
@@ -314,7 +317,8 @@ void DirectPoseEstimationMultiLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21) {
+    Sophus::SE3d &T21,
+    int img_idx) {
 
     // parameters
     int pyramids = 4;
@@ -351,7 +355,7 @@ void DirectPoseEstimationMultiLayer(
         cx = cxG * scales[level];
         cy = cyG * scales[level];
         // 不需要對depth_ref做縮放
-        DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21);
+        DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21, img_idx);
         // 不需要對T21特別做什麼
     }
 

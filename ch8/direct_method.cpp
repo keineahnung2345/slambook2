@@ -128,6 +128,11 @@ int main(int argc, char **argv) {
     cv::Mat disparity_img = cv::imread(disparity_file, 0);
 
     // let's randomly pick pixels in the first image and generate some 3d points in the first image's frame
+    /**
+     * https://stackoverflow.com/questions/21432136/how-to-seed-randn-function-opencv
+     * make the algorithm deterministic
+     **/
+    cv::theRNG().state = 0; //cv::getTickCount();
     cv::RNG rng;
     int nPoints = 2000;
     int boarder = 20;

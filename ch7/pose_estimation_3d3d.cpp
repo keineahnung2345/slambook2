@@ -68,6 +68,7 @@ class EdgeProjectXYZRGBDPoseOnly : public g2o::BaseUnaryEdge<3, Eigen::Vector3d,
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
+  // 初始化的參數是source point
   EdgeProjectXYZRGBDPoseOnly(const Eigen::Vector3d &point) : _point(point) {}
 
   virtual void computeError() override {

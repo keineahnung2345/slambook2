@@ -85,6 +85,7 @@ int main(int argc, char **argv) {
 
   chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
   Mat r, t;
+  // PnP:已知道三維點和對應的二維點,求解相機的位姿
   solvePnP(pts_3d, pts_2d, K, Mat(), r, t, false); // 调用OpenCV 的 PnP 求解，可选择EPNP，DLS等方法
   Mat R;
   //R = cos(theta) * I + (1-cos(theta))*n*n^T + sin(theta)*n^
@@ -281,6 +282,7 @@ void bundleAdjustmentGaussNewton(
 }
 
 /// vertex and edges used in g2o ba
+// 轉換矩陣有6個自由度,用SE3d儲存
 class VertexPose : public g2o::BaseVertex<6, Sophus::SE3d> {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -302,10 +304,12 @@ public:
   virtual bool write(ostream &out) const override {}
 };
 
+// <函數輸出值(觀測值)的個數,函數輸出值(觀測值)的類型,待估計變量(頂點)的類型>
 class EdgeProjection : public g2o::BaseUnaryEdge<2, Eigen::Vector2d, VertexPose> {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
+  // 初始化參數:三維點坐標,相機內參
   EdgeProjection(const Eigen::Vector3d &pos, const Eigen::Matrix3d &K) : _pos3d(pos), _K(K) {}
 
   virtual void computeError() override {
@@ -381,9 +385,11 @@ void bundleAdjustmentG2O(
     auto p3d = points_3d[i];
     EdgeProjection *edge = new EdgeProjection(p3d, K_eigen);
     edge->setId(index);
+    // 待優化變量只有一個,即相機位姿
     edge->setVertex(0, vertex_pose);
     edge->setMeasurement(p2d);
     edge->setInformation(Eigen::Matrix2d::Identity());
+    // 有幾個觀測就有幾條邊
     optimizer.addEdge(edge);
     index++;
   }

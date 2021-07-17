@@ -40,6 +40,7 @@ class CurveFittingEdge : public g2o::BaseUnaryEdge<1, double, CurveFittingVertex
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+  // x:函數的輸入值
   CurveFittingEdge(double x) : BaseUnaryEdge(), _x(x) {}
 
   // 计算曲线模型误差
@@ -109,6 +110,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < N; i++) {
     CurveFittingEdge *edge = new CurveFittingEdge(x_data[i]);
     edge->setId(i);
+    // 只有一個頂點(待優化變量)
     edge->setVertex(0, v);                // 设置连接的顶点
     edge->setMeasurement(y_data[i]);      // 观测数值
     edge->setInformation(Eigen::Matrix<double, 1, 1>::Identity() * 1 / (w_sigma * w_sigma)); // 信息矩阵：协方差矩阵之逆

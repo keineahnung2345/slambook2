@@ -43,6 +43,7 @@ struct PoseAndIntrinsics {
 };
 
 /// 位姿加相机内参的顶点，9维，前三维为so3，接下去为t, f, k1, k2
+// 相機內參使用自己定義的數據結構PoseAndIntrinsics來儲存
 class VertexPoseAndIntrinsics : public g2o::BaseVertex<9, PoseAndIntrinsics> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -54,6 +55,7 @@ public:
     }
 
     virtual void oplusImpl(const double *update) override {
+        // 更新旋轉,平移,f,k1,k2
         _estimate.rotation = SO3d::exp(Vector3d(update[0], update[1], update[2])) * _estimate.rotation;
         _estimate.translation += Vector3d(update[3], update[4], update[5]);
         _estimate.focal += update[6];
@@ -64,9 +66,11 @@ public:
     /// 根据估计值投影一个点
     Vector2d project(const Vector3d &point) {
         Vector3d pc = _estimate.rotation * point + _estimate.translation;
+        // 注意這裡有個負號
         pc = -pc / pc[2];
         double r2 = pc.squaredNorm();
         double distortion = 1.0 + r2 * (_estimate.k1 + _estimate.k2 * r2);
+        // 先投影到歸一化像平面,然後做distortion
         return Vector2d(_estimate.focal * distortion * pc[0],
                         _estimate.focal * distortion * pc[1]);
     }
@@ -136,7 +140,9 @@ int main(int argc, char **argv) {
 void SolveBA(BALProblem &bal_problem) {
     const int point_block_size = bal_problem.point_block_size();
     const int camera_block_size = bal_problem.camera_block_size();
+    // 儲存三維點的位置
     double *points = bal_problem.mutable_points();
+    // 儲存相機參數的位置
     double *cameras = bal_problem.mutable_cameras();
 
     // pose dimension 9, landmark is 3
@@ -192,11 +198,13 @@ void SolveBA(BALProblem &bal_problem) {
         double *camera = cameras + camera_block_size * i;
         auto vertex = vertex_pose_intrinsics[i];
         auto estimate = vertex->estimate();
+        // 用PoseAndIntrinsics數據結構儲存估計結果
         estimate.set_to(camera);
     }
     for (int i = 0; i < bal_problem.num_points(); ++i) {
         double *point = points + point_block_size * i;
         auto vertex = vertex_points[i];
+        // 用points數據結構儲存估計結果
         for (int k = 0; k < 3; ++k) point[k] = vertex->estimate()[k];
     }
 }

@@ -214,7 +214,8 @@ void bundleAdjustmentGaussNewton(
 
       cost += e.squaredNorm();
       /**
-       * 2*6的Jacobian矩陣:
+       * 像素點坐標對相機位姿李代數表示se(3)的微分
+       * 2(像素點坐標)*6(se(3))的Jacobian矩陣:
        * fx,fy:相機焦距
        * P'=[X' Y' Z']為相機坐標系下的三維點坐標
        *   [fx/Z'     0 -fx*X'/(Z'Z')    -fxX'Y'/(Z'Z') fx+(fxX'X')/(Z'Z') -fxY'/(Z'Z')]
